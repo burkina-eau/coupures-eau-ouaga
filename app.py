@@ -2,13 +2,16 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 import pandas as pd
+import urllib.parse
+from datetime import datetime
 
 st.set_page_config(page_title="Coupures Eau Ouaga", layout="wide")
 st.title("💧 Carte Collaborative - Coupures Eau Ouaga")
-st.markdown("🔴 Coupure | 🟠 Faible | 🟢 Eau OK")
-st.markdown("---")
 
-# LISTE COMPLÈTE 35 QUARTIERS DE OUAGADOUGOU
+# === TON NUMÉRO WHATSAPP ===
+NUMERO_WHATSAPP_ADMIN = "22667351850"
+
+# LISTE 35 QUARTIERS
 data = [
     {"quartier": "Paspanga", "lat": 12.368, "lon": -1.515, "statut": "Coupure"},
     {"quartier": "Dapoya", "lat": 12.375, "lon": -1.530, "statut": "Coupure"},
@@ -46,36 +49,43 @@ data = [
     {"quartier": "Hamdalaye", "lat": 12.365, "lon": -1.555, "statut": "Eau OK"},
     {"quartier": "Nonsin", "lat": 12.405, "lon": -1.535, "statut": "Coupure"},
 ]
-
 df = pd.DataFrame(data)
 
 # CARTE
 m = folium.Map(location=[12.36, -1.52], zoom_start=12)
 for _, row in df.iterrows():
     color = "red" if row["statut"] == "Coupure" else "orange" if row["statut"] == "Faible pression" else "green"
-    # Kalgodin en bleu étoile
     if row["quartier"] == "Kalgodin":
-        folium.Marker([row["lat"], row["lon"]], popup=f"⭐ {row['quartier']} : {row['statut']} - VOUS", tooltip="KALGODIN", icon=folium.Icon(color="blue", icon="star", prefix="fa")).add_to(m)
+        folium.Marker([row["lat"], row["lon"]], popup=f"⭐ {row['quartier']}", tooltip="KALGODIN", icon=folium.Icon(color="blue", icon="star", prefix="fa")).add_to(m)
     else:
         folium.Marker([row["lat"], row["lon"]], popup=f"{row['quartier']} : {row['statut']}", tooltip=row['quartier'], icon=folium.Icon(color=color, icon="tint", prefix="fa")).add_to(m)
+st_folium(m, width=700, height=500)
 
-st_folium(m, width=700, height=500, returned_objects=[])
+if "signalements" not in st.session_state:
+    st.session_state.signalements = []
 
-# FORMULAIRE AVEC LES 35 QUARTIERS
+# FORMULAIRE
 st.markdown("---")
-st.subheader("📢 Signaler une coupure - Choisissez votre quartier")
-st.write(f"Nous couvrons {len(df)} quartiers de Ouaga. Sélectionnez le vôtre :")
+st.subheader("📢 Signaler - Les 35 quartiers disponibles")
 
 with st.form("signalement"):
-    # ICI LES 35 QUARTIERS SERONT DANS LA LISTE
-    quartier_choisi = st.selectbox("Votre quartier (35 quartiers disponibles) :", sorted(df["quartier"].unique()))
-    statut_choisi = st.selectbox("Situation chez vous :", ["Coupure", "Faible pression", "Eau OK"])
-    nom = st.text_input("Votre nom ou numéro (pour que je sache où vous êtes)")
+    quartier_choisi = st.selectbox("Votre quartier :", sorted(df["quartier"].unique()))
+    statut_choisi = st.selectbox("Situation :", ["Coupure", "Faible pression", "Eau OK"])
+    nom = st.text_input("Votre nom / numéro")
     bouton = st.form_submit_button("🚀 Envoyer mon signalement")
 
     if bouton:
-        st.success(f"✅ Merci {nom} ! Signalement reçu : Vous êtes à {quartier_choisi} -> {statut_choisi}")
+        heure = datetime.now().strftime("%d/%m %H:%M")
+        nouveau = {"Heure": heure, "Quartier": quartier_choisi, "Statut": statut_choisi, "Nom": nom}
+        st.session_state.signalements.append(nouveau)
+        msg = f"Salut, c'est {nom} de {quartier_choisi}. Chez nous il y a {statut_choisi}. Vu sur ta carte Coupures Eau Ouaga."
+        msg_encode = urllib.parse.quote(msg)
+        lien_whatsapp = f"https://wa.me/{NUMERO_WHATSAPP_ADMIN}?text={msg_encode}"
+        st.success(f"✅ Merci {nom} ! Signalement ajouté pour {quartier_choisi}")
+        st.markdown(f"[💬 CLIQUE ICI POUR M'ÉCRIRE SUR WHATSAPP AU 67351850]({lien_whatsapp})")
         st.balloons()
-        st.info(f"Grâce à vous, je sais maintenant qu'à {quartier_choisi} il y a : {statut_choisi}")
 
-st.dataframe(df.sort_values("quartier"), use_container_width=True)
+if st.session_state.signalements:
+    st.markdown("---")
+    st.subheader(f"📋 Derniers signalements en direct ({len(st.session_state.signalements)})")
+    st.dataframe(pd.DataFrame(st.session_state.signalements), use_container_width=True)
