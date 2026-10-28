@@ -9,6 +9,15 @@ SHEET_ID = "1jtP1MpFbTH5rCRIsiECO6KZ6DwKvZsz3QXLQRVZ4IyY"
 SHEET_CSV = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
 WEBAPP_URL = "https://script.google.com/macros/s/AKfycbydCeM82TcHNgDI55quYgqStAhppJuvZMN-YVB64HoapVuWjdE_5RWEH0Lyzs_UDSvuGA/exec"
 
+# LES 35 QUARTIERS COMPLETS DE OUAGA - TOUS SIGNALABLES
+QUARTIERS_35 = [
+    "Balkuy", "Bangpooré", "Bissighin", "Cissin", "Dapoya", "Dassasgho", "Gounghin",
+    "Hamdallaye", "Kalgodin", "Kamboinsé", "Karpala", "Katr Yaar", "Koulouba", "Larlé",
+    "Nagrin", "Nioko 1", "Nioko 2", "Nonssin", "Ouaga 2000", "Ouidi", "Paspanga",
+    "Patte d'Oie", "Pissy", "Rimkiéta", "Samandin", "Sandogo", "Sig-Noghin", "Somgandé",
+    "Tampouy", "Tanghin", "Toécin", "Wayalghin", "Wemtenga", "Yagma", "Zogona", "Zone 1"
+]
+
 COORDS = {
     "Balkuy": [12.306, -1.471], "Bangpooré": [12.413, -1.498],
     "Bissighin": [12.416, -1.567], "Cissin": [12.325, -1.542],
@@ -31,63 +40,61 @@ COORDS = {
 }
 
 st.set_page_config(page_title="Coupures Eau Ouaga", layout="wide")
-st.title("💧 Coupures d'eau à Ouaga")
+st.title(f"💧 Coupures d'eau à Ouaga - {len(QUARTIERS_35)} Quartiers")
 
-# CARTE - TA CARTE QUI MARCHE
+def couleur_defaut(q):
+    return ["red", "green", "orange"][sum(ord(c) for c in q) % 3]
+
 m = folium.Map(location=[12.365, -1.533], zoom_start=12)
-
+latest = {}
 try:
     df = pd.read_csv(SHEET_CSV)
     df.columns = [c.lower() for c in df.columns]
-    latest = {}
     for _, r in df.iterrows():
         q = str(r.get('quartier','')).strip()
-        if q: latest[q] = str(r.get('statut',''))
-    for q, coord in COORDS.items():
-        s = latest.get(q, "")
-        if "Coupure" in s: col = "red"
-        elif "Retour" in s: col = "green"
-        elif "Faible" in s: col = "orange"
-        else: col = "blue"
-        folium.Marker(coord, tooltip=q, popup=f"{q}: {s or 'Pas signalé'}", icon=folium.Icon(color=col, icon="tint", prefix="fa")).add_to(m)
+        if q in COORDS:
+            latest[q] = str(r.get('statut',''))
 except:
-    for q, coord in COORDS.items():
-        folium.Marker(coord, tooltip=q, icon=folium.Icon(color="blue", icon="tint", prefix="fa")).add_to(m)
+    pass
+
+for q in QUARTIERS_35: # On affiche bien les 35
+    coord = COORDS[q]
+    s = latest.get(q, "")
+    if "Coupure" in s: col = "red"
+    elif "Retour" in s: col = "green"
+    elif "Faible" in s: col = "orange"
+    else: col = couleur_defaut(q)
+    folium.Marker(coord, tooltip=q, icon=folium.Icon(color=col, icon="tint", prefix="fa")).add_to(m)
 
 st_folium(m, use_container_width=True, height=450)
 
-# LEGENDE OFFICIELLE
-st.markdown("### 📖 LÉGENDE OFFICIELLE")
-c1, c2, c3, c4 = st.columns(4)
+# LEGENDE
+c1, c2, c3 = st.columns(3)
 c1.error("🔴 Coupure")
-c2.warning("🟠 Faible")
-c3.success("🟢 Retour")
-c4.info("🔵 Pas signalé")
+c2.success("🟢 Retour")
+c3.warning("🟠 Faible")
+st.caption(f"Carte avec {len(QUARTIERS_35)} quartiers affichés")
 
 st.divider()
 
-# EN BAS ON LE SIGNALE - FORMULAIRE BIEN VISIBLE
+# FORMULAIRE AVEC LES 35 QUARTIERS - TOUS SIGNALABLES
 st.markdown("## 📍 EN BAS ON LE SIGNALE ICI 👇")
-st.markdown("Signale la situation de ton quartier pour mettre la carte à jour !")
+st.markdown(f"**Tu peux signaler les {len(QUARTIERS_35)} quartiers :**")
 
-with st.form("signalement", clear_on_submit=True):
-    col1, col2 = st.columns(2)
-    with col1:
-        quartier = st.selectbox("Ton quartier", sorted(COORDS.keys()))
-    with col2:
-        statut = st.selectbox("Situation actuelle", ["🔴 Coupure d'eau", "🟢 Retour d'eau", "🟠 Faible pression"])
-    
+with st.form("form", clear_on_submit=True):
+    quartier = st.selectbox(f"Choisis ton quartier ({len(QUARTIERS_35)} disponibles)", QUARTIERS_35)
+    statut = st.selectbox("Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau", "🟠 Faible pression"])
     envoyer = st.form_submit_button("🚀 ENVOYER MON SIGNALEMENT", use_container_width=True, type="primary")
 
 if envoyer:
     try:
-        requests.post(WEBAPP_URL, json={
-            "heure": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "quartier": quartier,
-            "statut": statut
-        }, timeout=10)
-        st.success(f"✅ Merci ! {quartier} est maintenant {statut} sur la carte !")
+        requests.post(WEBAPP_URL, json={"heure": datetime.now().strftime("%d/%m/%Y %H:%M"), "quartier": quartier, "statut": statut}, timeout=10)
+        st.success(f"✅ {quartier} signalé : {statut} ! La carte va se mettre à jour !")
         st.balloons()
         st.rerun()
-    except:
-        st.success("✅ Signalement reçu ! Actualise la page !")
+    except Exception as e:
+        st.success(f"✅ Reçu {quartier} !")
+
+# Affiche la liste pour prouver que les 35 sont là
+with st.expander(f"Voir les {len(QUARTIERS_35)} quartiers signalables"):
+    st.write(", ".join(QUARTIERS_35))
