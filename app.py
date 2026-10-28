@@ -33,55 +33,53 @@ COORDS = {
 st.set_page_config(page_title="Coupures Eau Ouaga", layout="wide")
 st.title("💧 Coupures d'eau à Ouaga")
 
-# CARTE EN HAUT COMME SUR TA PHOTO
+# CARTE EN HAUT - TOUJOURS VISIBLE
 m = folium.Map(location=[12.365, -1.533], zoom_start=12)
+
+# 1. Affiche toujours les 35 quartiers en gris
+for q, coord in COORDS.items():
+    folium.CircleMarker(coord, radius=4, color="gray", fill=True, fill_opacity=0.3, popup=q, tooltip=q).add_to(m)
+
+# 2. Ajoute les signalements colorés par dessus
 try:
     df = pd.read_csv(SHEET_CSV)
     if not df.empty:
+        # Cherche la colonne quartier peu importe majuscule/minuscule
+        df.columns = [c.lower().strip() for c in df.columns]
         for _, row in df.tail(100).iterrows():
-            q = str(row.get('quartier','')).strip()
-            s = str(row.get('statut',''))
-            if q in COORDS:
-                color = "red" if "Coupure" in s else "green" if "Retour" in s else "orange"
-                folium.Marker(COORDS[q], popup=f"{q}: {s}", tooltip=q, icon=folium.Icon(color=color, icon="tint", prefix="fa")).add_to(m)
-except:
-    pass
+            q = str(row.get('quartier', '')).strip()
+            # Corrige le nom pour matcher
+            q_match = next((k for k in COORDS if k.lower() in q.lower() or q.lower() in k.lower()), None)
+            if q_match:
+                s = str(row.get('statut', '')).lower()
+                color = "red" if "coupure" in s else "green" if "retour" in s else "orange"
+                folium.Marker(COORDS[q_match], popup=f"{q_match}: {s}", tooltip=f"{q_match} - {s}", icon=folium.Icon(color=color, icon="tint", prefix="fa")).add_to(m)
+except Exception as e:
+    st.write(f"Debug: {e}")
+
 st_folium(m, use_container_width=True, height=500)
 
-# LES 3 LÉGENDES DE TON MODÈLE
+# LES 3 LÉGENDES BIEN CLAIRES
 c1, c2, c3 = st.columns(3)
 with c1:
     st.error("🔴 Coupure d'eau")
 with c2:
     st.success("🟢 Retour d'eau")
 with c3:
-    st.warning("🟠 Faible pression")
+    st.warning("⚪ Pas encore signalé")
 
 st.divider()
 
-# FORMULAIRE
 with st.form("form", clear_on_submit=True):
-    colA, colB = st.columns(2)
-    with colA:
-        quartier = st.selectbox("📍 Quartier", sorted(COORDS.keys()))
-    with colB:
-        statut = st.selectbox("Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau", "🟠 Faible pression"])
+    q = st.selectbox("📍 Ton quartier", sorted(COORDS.keys()))
+    s = st.selectbox("Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau", "🟠 Faible pression"])
     envoyer = st.form_submit_button("🚀 Envoyer", use_container_width=True)
 
 if envoyer:
     heure = datetime.now().strftime("%d/%m/%Y %H:%M")
     try:
-        requests.post(WEBAPP_URL, json={"heure": heure, "quartier": quartier, "statut": statut}, timeout=10)
-        st.success(f"✅ {quartier} enregistré !")
+        requests.post(WEBAPP_URL, json={"heure": heure, "quartier": q, "statut": s}, timeout=10)
+        st.success(f"✅ {q} enregistré ! Actualise la page !")
         st.balloons()
-        st.rerun()
     except:
         st.success("✅ Reçu !")
-
-# TABLEAU
-try:
-    df = pd.read_csv(SHEET_CSV)
-    if not df.empty:
-        st.dataframe(df.tail(20).iloc[::-1], use_container_width=True, hide_index=True)
-except:
-    pass
