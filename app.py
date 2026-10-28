@@ -9,7 +9,6 @@ WEBAPP_URL = "https://script.google.com/macros/s/AKfycbydCeM82TcHNgDI55quYgqStAh
 SHEET_ID = "1jtP1MpFbTH5rCRIsiECO6KZ6DwKvZsz3QXLQRVZ4IyY"
 SHEET_CSV = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
 
-# LES 35 QUARTIERS DE OUAGA AVEC COORDONNÉES
 COORDS = {
     "Balkuy": [12.306, -1.471], "Bangpooré": [12.413, -1.498],
     "Bissighin": [12.416, -1.567], "Cissin": [12.325, -1.542],
@@ -34,52 +33,64 @@ COORDS = {
 st.set_page_config(page_title="Coupures Eau Ouaga", layout="wide")
 st.title("💧 Coupures d'eau à Ouaga - 35 Quartiers")
 
-col1, col2 = st.columns([1, 1.5])
+# --- CARTE EN HAUT ---
+st.subheader("🗺️ Carte en direct")
+m = folium.Map(location=[12.365, -1.533], zoom_start=12)
 
+try:
+    df = pd.read_csv(SHEET_CSV)
+    if not df.empty:
+        for _, row in df.tail(100).iterrows():
+            q = str(row.get('quartier', '')).strip()
+            s = str(row.get('statut', ''))
+            if q in COORDS:
+                coord = COORDS[q]
+                color = "red" if "Coupure" in s else "green"
+                folium.Marker(coord, popup=f"{q}: {s}", tooltip=q, icon=folium.Icon(color=color, icon="tint", prefix="fa")).add_to(m)
+except:
+    pass
+
+st_folium(m, use_container_width=True, height=500)
+
+# --- LES 3 LÉGENDES BIEN CLAIRES ---
+col1, col2, col3 = st.columns(3)
 with col1:
-    with st.form("form", clear_on_submit=True):
-        quartier = st.selectbox("📍 Choisis ton quartier (35 quartiers)", sorted(list(COORDS.keys())))
-        statut = st.radio("💧 Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau"])
-        nom = st.text_input("Prénom (optionnel)")
-        envoyer = st.form_submit_button("🚀 Envoyer", use_container_width=True)
-    
-    if envoyer:
-        heure = datetime.now().strftime("%d/%m/%Y %H:%M")
-        try:
-            requests.post(WEBAPP_URL, json={"heure": heure, "quartier": quartier, "statut": statut, "nom": nom}, timeout=10)
-            st.success(f"✅ Enregistré pour {quartier} !")
-            st.balloons()
-        except:
-            st.success("✅ Reçu !")
-
-    st.subheader("📊 Derniers signalements")
-    try:
-        df = pd.read_csv(SHEET_CSV)
-        if not df.empty:
-            st.dataframe(df.tail(25).iloc[::-1], use_container_width=True, hide_index=True)
-            st.caption(f"Total : {len(df)} signalements sauvés")
-    except:
-        st.info("Fais le premier signalement !")
-
+    st.markdown("### 🔴 Coupure d'eau")
+    st.caption("Pas d'eau dans le quartier")
 with col2:
-    st.subheader("🗺️ Carte des 35 quartiers")
-    m = folium.Map(location=[12.365, -1.533], zoom_start=11.5)
-    try:
-        df = pd.read_csv(SHEET_CSV)
-        if not df.empty:
-            for _, row in df.tail(50).iterrows():
-                q = str(row.get('quartier', 'Autre')).strip()
-                s = str(row.get('statut', ''))
-                if q in COORDS:
-                    coord = COORDS[q]
-                    color = "red" if "Coupure" in s else "green"
-                    folium.Marker(coord, popup=f"{q}: {s}", tooltip=q, icon=folium.Icon(color=color, icon="tint")).add_to(m)
-    except:
-        pass
-    # Ajoute tous les quartiers en gris clair pour voir la carte complète
-    for q, coord in COORDS.items():
-        folium.CircleMarker(coord, radius=3, color="gray", fill=True, popup=q).add_to(m)
-        
-    st_folium(m, use_container_width=True, height=650)
+    st.markdown("### 🟢 Retour d'eau")
+    st.caption("L'eau est revenue !")
+with col3:
+    st.markdown("### ⚪ Pas signalé")
+    st.caption("Pas encore d'info")
 
-st.link_button("📂 Voir Google Sheet", f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit")
+st.divider()
+
+# --- FORMULAIRE ---
+st.subheader("📍 Signaler votre quartier")
+with st.form("form", clear_on_submit=True):
+    c1, c2 = st.columns(2)
+    with c1:
+        quartier = st.selectbox("Votre quartier", sorted(list(COORDS.keys())))
+    with c2:
+        statut = st.radio("Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau"], horizontal=True)
+    nom = st.text_input("Prénom (optionnel)")
+    envoyer = st.form_submit_button("🚀 Envoyer", use_container_width=True)
+
+if envoyer:
+    heure = datetime.now().strftime("%d/%m/%Y %H:%M")
+    try:
+        requests.post(WEBAPP_URL, json={"heure": heure, "quartier": quartier, "statut": statut, "nom": nom}, timeout=10)
+        st.success(f"✅ Enregistré pour {quartier} !")
+        st.balloons()
+        st.rerun()
+    except:
+        st.success("✅ Reçu !")
+
+st.subheader("📊 Derniers signalements (sauvés pour toujours)")
+try:
+    df = pd.read_csv(SHEET_CSV)
+    if not df.empty:
+        st.dataframe(df.tail(25).iloc[::-1], use_container_width=True, hide_index=True)
+except:
+    st.info("Fais le premier signalement !")
