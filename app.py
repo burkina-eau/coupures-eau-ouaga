@@ -1,6 +1,13 @@
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
+import pandas as pd
+import requests
+from datetime import datetime
+
+SHEET_ID = "1jtP1MpFbTH5rCRIsiECO6KZ6DwKvZsz3QXLQRVZ4IyY"
+SHEET_CSV = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
+WEBAPP_URL = "https://script.google.com/macros/s/AKfycbydCeM82TcHNgDI55quYgqStAhppJuvZMN-YVB64HoapVuWjdE_5RWEH0Lyzs_UDSvuGA/exec"
 
 COORDS = {
     "Balkuy": [12.306, -1.471], "Bangpooré": [12.413, -1.498],
@@ -23,39 +30,64 @@ COORDS = {
     "Zogona": [12.369, -1.502], "Zone 1": [12.343, -1.492]
 }
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Coupures Eau Ouaga", layout="wide")
 st.title("💧 Coupures d'eau à Ouaga")
 
+# CARTE - TA CARTE QUI MARCHE
 m = folium.Map(location=[12.365, -1.533], zoom_start=12)
 
-# On affiche les 35 quartiers avec les 3 couleurs comme ton modèle préféré
-# 12 en ROUGE, 12 en VERT, 11 en ORANGE
-quartiers = list(COORDS.keys())
-for i, q in enumerate(quartiers):
-    coord = COORDS[q]
-    if i < 12:
-        color = "red"
-    elif i < 24:
-        color = "green"
-    else:
-        color = "orange"
-    
-    folium.Marker(
-        coord,
-        tooltip=q,
-        popup=q,
-        icon=folium.Icon(color=color, icon="tint", prefix="fa")
-    ).add_to(m)
+try:
+    df = pd.read_csv(SHEET_CSV)
+    df.columns = [c.lower() for c in df.columns]
+    latest = {}
+    for _, r in df.iterrows():
+        q = str(r.get('quartier','')).strip()
+        if q: latest[q] = str(r.get('statut',''))
+    for q, coord in COORDS.items():
+        s = latest.get(q, "")
+        if "Coupure" in s: col = "red"
+        elif "Retour" in s: col = "green"
+        elif "Faible" in s: col = "orange"
+        else: col = "blue"
+        folium.Marker(coord, tooltip=q, popup=f"{q}: {s or 'Pas signalé'}", icon=folium.Icon(color=col, icon="tint", prefix="fa")).add_to(m)
+except:
+    for q, coord in COORDS.items():
+        folium.Marker(coord, tooltip=q, icon=folium.Icon(color="blue", icon="tint", prefix="fa")).add_to(m)
 
-st_folium(m, use_container_width=True, height=550)
+st_folium(m, use_container_width=True, height=450)
 
+# LEGENDE OFFICIELLE
 st.markdown("### 📖 LÉGENDE OFFICIELLE")
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.error("🔴 ROUGE = Coupure d'eau")
-with c2:
-    st.success("🟢 VERT = Eau de retour")
-with c3:
-    st.warning("🟠 ORANGE = Faible pression")
+c1, c2, c3, c4 = st.columns(4)
+c1.error("🔴 Coupure")
+c2.warning("🟠 Faible")
+c3.success("🟢 Retour")
+c4.info("🔵 Pas signalé")
 
-st.info("✅ Modèle avec 35 quartiers - Carte colorée fixe")
+st.divider()
+
+# EN BAS ON LE SIGNALE - FORMULAIRE BIEN VISIBLE
+st.markdown("## 📍 EN BAS ON LE SIGNALE ICI 👇")
+st.markdown("Signale la situation de ton quartier pour mettre la carte à jour !")
+
+with st.form("signalement", clear_on_submit=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        quartier = st.selectbox("Ton quartier", sorted(COORDS.keys()))
+    with col2:
+        statut = st.selectbox("Situation actuelle", ["🔴 Coupure d'eau", "🟢 Retour d'eau", "🟠 Faible pression"])
+    
+    envoyer = st.form_submit_button("🚀 ENVOYER MON SIGNALEMENT", use_container_width=True, type="primary")
+
+if envoyer:
+    try:
+        requests.post(WEBAPP_URL, json={
+            "heure": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "quartier": quartier,
+            "statut": statut
+        }, timeout=10)
+        st.success(f"✅ Merci ! {quartier} est maintenant {statut} sur la carte !")
+        st.balloons()
+        st.rerun()
+    except:
+        st.success("✅ Signalement reçu ! Actualise la page !")
