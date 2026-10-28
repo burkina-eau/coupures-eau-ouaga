@@ -31,66 +31,57 @@ COORDS = {
 }
 
 st.set_page_config(page_title="Coupures Eau Ouaga", layout="wide")
-st.title("💧 Coupures d'eau à Ouaga - 35 Quartiers")
+st.title("💧 Coupures d'eau à Ouaga")
 
-# --- CARTE EN HAUT ---
-st.subheader("🗺️ Carte en direct")
+# CARTE EN HAUT COMME SUR TA PHOTO
 m = folium.Map(location=[12.365, -1.533], zoom_start=12)
-
 try:
     df = pd.read_csv(SHEET_CSV)
     if not df.empty:
         for _, row in df.tail(100).iterrows():
-            q = str(row.get('quartier', '')).strip()
-            s = str(row.get('statut', ''))
+            q = str(row.get('quartier','')).strip()
+            s = str(row.get('statut',''))
             if q in COORDS:
-                coord = COORDS[q]
-                color = "red" if "Coupure" in s else "green"
-                folium.Marker(coord, popup=f"{q}: {s}", tooltip=q, icon=folium.Icon(color=color, icon="tint", prefix="fa")).add_to(m)
+                color = "red" if "Coupure" in s else "green" if "Retour" in s else "orange"
+                folium.Marker(COORDS[q], popup=f"{q}: {s}", tooltip=q, icon=folium.Icon(color=color, icon="tint", prefix="fa")).add_to(m)
 except:
     pass
-
 st_folium(m, use_container_width=True, height=500)
 
-# --- LES 3 LÉGENDES BIEN CLAIRES ---
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("### 🔴 Coupure d'eau")
-    st.caption("Pas d'eau dans le quartier")
-with col2:
-    st.markdown("### 🟢 Retour d'eau")
-    st.caption("L'eau est revenue !")
-with col3:
-    st.markdown("### ⚪ Pas signalé")
-    st.caption("Pas encore d'info")
+# LES 3 LÉGENDES DE TON MODÈLE
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.error("🔴 Coupure d'eau")
+with c2:
+    st.success("🟢 Retour d'eau")
+with c3:
+    st.warning("🟠 Faible pression")
 
 st.divider()
 
-# --- FORMULAIRE ---
-st.subheader("📍 Signaler votre quartier")
+# FORMULAIRE
 with st.form("form", clear_on_submit=True):
-    c1, c2 = st.columns(2)
-    with c1:
-        quartier = st.selectbox("Votre quartier", sorted(list(COORDS.keys())))
-    with c2:
-        statut = st.radio("Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau"], horizontal=True)
-    nom = st.text_input("Prénom (optionnel)")
+    colA, colB = st.columns(2)
+    with colA:
+        quartier = st.selectbox("📍 Quartier", sorted(COORDS.keys()))
+    with colB:
+        statut = st.selectbox("Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau", "🟠 Faible pression"])
     envoyer = st.form_submit_button("🚀 Envoyer", use_container_width=True)
 
 if envoyer:
     heure = datetime.now().strftime("%d/%m/%Y %H:%M")
     try:
-        requests.post(WEBAPP_URL, json={"heure": heure, "quartier": quartier, "statut": statut, "nom": nom}, timeout=10)
-        st.success(f"✅ Enregistré pour {quartier} !")
+        requests.post(WEBAPP_URL, json={"heure": heure, "quartier": quartier, "statut": statut}, timeout=10)
+        st.success(f"✅ {quartier} enregistré !")
         st.balloons()
         st.rerun()
     except:
         st.success("✅ Reçu !")
 
-st.subheader("📊 Derniers signalements (sauvés pour toujours)")
+# TABLEAU
 try:
     df = pd.read_csv(SHEET_CSV)
     if not df.empty:
-        st.dataframe(df.tail(25).iloc[::-1], use_container_width=True, hide_index=True)
+        st.dataframe(df.tail(20).iloc[::-1], use_container_width=True, hide_index=True)
 except:
-    st.info("Fais le premier signalement !")
+    pass
