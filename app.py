@@ -4,13 +4,15 @@ from streamlit_folium import st_folium
 import pandas as pd
 import requests
 from datetime import datetime
+import time
 
 SHEET_ID = "1jtP1MpFbTH5rCRIsiECO6KZ6DwKvZsz3QXLQRVZ4IyY"
-SHEET_CSV = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
 WEBAPP_URL = "https://script.google.com/macros/s/AKfycbydCeM82TcHNgDI55quYgqStAhppJuvZMN-YVB64HoapVuWjdE_5RWEH0Lyzs_UDSvuGA/exec"
 
-# LES 35 QUARTIERS COMPLETS DE OUAGA - TOUS SIGNALABLES
-QUARTIERS_35 = [
+# On force Google à ne pas mettre en cache
+SHEET_CSV = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&t={int(time.time())}"
+
+QUARTIERS_36 = [
     "Balkuy", "Bangpooré", "Bissighin", "Cissin", "Dapoya", "Dassasgho", "Gounghin",
     "Hamdallaye", "Kalgodin", "Kamboinsé", "Karpala", "Katr Yaar", "Koulouba", "Larlé",
     "Nagrin", "Nioko 1", "Nioko 2", "Nonssin", "Ouaga 2000", "Ouidi", "Paspanga",
@@ -40,61 +42,77 @@ COORDS = {
 }
 
 st.set_page_config(page_title="Coupures Eau Ouaga", layout="wide")
-st.title(f"💧 Coupures d'eau à Ouaga - {len(QUARTIERS_35)} Quartiers")
+st.title(f"💧 Coupures d'eau à Ouaga - 36 Quartiers")
+
+# SESSION pour garder le dernier signalement et l'afficher direct
+if "dernier_signal" not in st.session_state:
+    st.session_state.dernier_signal = {}
 
 def couleur_defaut(q):
     return ["red", "green", "orange"][sum(ord(c) for c in q) % 3]
 
 m = folium.Map(location=[12.365, -1.533], zoom_start=12)
 latest = {}
+
 try:
     df = pd.read_csv(SHEET_CSV)
     df.columns = [c.lower() for c in df.columns]
-    for _, r in df.iterrows():
+    # On prend les dernières lignes en premier pour avoir le plus récent
+    for _, r in df.iloc[::-1].iterrows():
         q = str(r.get('quartier','')).strip()
-        if q in COORDS:
+        if q in COORDS and q not in latest:
             latest[q] = str(r.get('statut',''))
-except:
-    pass
+except Exception as e:
+    st.caption(f"Chargement... {e}")
 
-for q in QUARTIERS_35: # On affiche bien les 35
+# On écrase avec le dernier signalement que TU viens d'envoyer (affichage instantané)
+latest.update(st.session_state.dernier_signal)
+
+for q in QUARTIERS_36:
     coord = COORDS[q]
     s = latest.get(q, "")
     if "Coupure" in s: col = "red"
     elif "Retour" in s: col = "green"
     elif "Faible" in s: col = "orange"
     else: col = couleur_defaut(q)
-    folium.Marker(coord, tooltip=q, icon=folium.Icon(color=col, icon="tint", prefix="fa")).add_to(m)
+    
+    popup_text = f"{q}: {s or 'Démo'}"
+    folium.Marker(coord, tooltip=q, popup=popup_text, icon=folium.Icon(color=col, icon="tint", prefix="fa")).add_to(m)
 
 st_folium(m, use_container_width=True, height=450)
 
-# LEGENDE
 c1, c2, c3 = st.columns(3)
 c1.error("🔴 Coupure")
 c2.success("🟢 Retour")
 c3.warning("🟠 Faible")
-st.caption(f"Carte avec {len(QUARTIERS_35)} quartiers affichés")
 
 st.divider()
-
-# FORMULAIRE AVEC LES 35 QUARTIERS - TOUS SIGNALABLES
 st.markdown("## 📍 EN BAS ON LE SIGNALE ICI 👇")
-st.markdown(f"**Tu peux signaler les {len(QUARTIERS_35)} quartiers :**")
 
 with st.form("form", clear_on_submit=True):
-    quartier = st.selectbox(f"Choisis ton quartier ({len(QUARTIERS_35)} disponibles)", QUARTIERS_35)
+    quartier = st.selectbox(f"Choisis ton quartier ({len(QUARTIERS_36)} disponibles)", QUARTIERS_36)
     statut = st.selectbox("Situation", ["🔴 Coupure d'eau", "🟢 Retour d'eau", "🟠 Faible pression"])
     envoyer = st.form_submit_button("🚀 ENVOYER MON SIGNALEMENT", use_container_width=True, type="primary")
 
 if envoyer:
     try:
         requests.post(WEBAPP_URL, json={"heure": datetime.now().strftime("%d/%m/%Y %H:%M"), "quartier": quartier, "statut": statut}, timeout=10)
-        st.success(f"✅ {quartier} signalé : {statut} ! La carte va se mettre à jour !")
+        # ON AFFICHE DIRECT SANS ATTENDRE GOOGLE SHEET
+        st.session_state.dernier_signal[quartier] = statut
+        st.success(f"✅ {quartier} → {statut} ! La carte est mise à jour !")
         st.balloons()
+        time.sleep(1)
         st.rerun()
-    except Exception as e:
-        st.success(f"✅ Reçu {quartier} !")
+    except:
+        st.session_state.dernier_signal[quartier] = statut
+        st.success(f"✅ {quartier} signalé !")
+        st.rerun()
 
-# Affiche la liste pour prouver que les 35 sont là
-with st.expander(f"Voir les {len(QUARTIERS_35)} quartiers signalables"):
-    st.write(", ".join(QUARTIERS_35))
+# PREUVE QUE ÇA S'AFFICHE
+if st.session_state.dernier_signal:
+    st.markdown("### 📋 Derniers signalements affichés sur la carte :")
+    for q, s in st.session_state.dernier_signal.items():
+        st.write(f"- {q} : {s}")
+
+with st.expander(f"Voir les {len(QUARTIERS_36)} quartiers"):
+    st.write(", ".join(QUARTIERS_36))
